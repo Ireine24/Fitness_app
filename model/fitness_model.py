@@ -13,3 +13,5 @@ class FitnessModel:
     def get_program_for_day(self, day_name: str) -> list:
         """Henter øvelser og sæt for en given ugedag via DatabaseHandler."""
         return self.db_handler.get_program_for_day(day_name)
+
+    

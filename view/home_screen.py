@@ -71,7 +71,7 @@ class HomeScreen(Screen):
         cards_layout.add_widget(CardButton("Mit træningsprogram", lambda x: setattr(self.manager, 'current', 'program_screen')))
         cards_layout.add_widget(CardButton("Træningsøvelser udvikling", lambda x: setattr(self.manager, 'current', 'dev_screen')))
         cards_layout.add_widget(CardButton("Min vægt", lambda x: setattr(self.manager, 'current', 'weight_screen')))
-        cards_layout.add_widget(CardButton("", lambda x: None)) # Tomt fjerde felt
+        cards_layout.add_widget(CardButton("Mine træningssessioner", lambda x: None)) # Tomt fjerde felt
 
         scroll = ScrollView(size_hint=(1, 0.9))
         scroll.add_widget(cards_layout)
