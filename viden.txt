@@ -1,0 +1,1 @@
+python -m PyInstaller main.spec --> for at få over i exe fil
