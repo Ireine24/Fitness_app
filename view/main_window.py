@@ -36,12 +36,13 @@ class MainWindow(QMainWindow):
         # Tilføj fanerne (Forside først)
         self.tabs.addTab(self.home_widget, "Forside")
         self.tabs.addTab(self.plot_widget, "Styrkeudvikling (Graf)")
-        self.tabs.addTab(self.table_widget, "Træningsoversigt (Pas && Løft)")
+        self.tabs.addTab(self.table_widget, "Træningsoversigt (Pas & Løft)")
         self.tabs.addTab(self.bw_widget, "Kropsvægt")
         self.tabs.addTab(self.program_widget, "Træningsprogram")
 
         main_layout.addWidget(self.top_bar)
         main_layout.addWidget(self.tabs, stretch=1)
+        # (Bemærk: EntryFormWidget er fjernet herfra, da den nu bor øverst i TableWidget)
 
     def prompt_file_selection(self) -> str:
         fil, _ = QFileDialog.getOpenFileName(

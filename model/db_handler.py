@@ -13,7 +13,7 @@ class DatabaseHandler:
         return conn
 
     def _init_db(self):
-        """Opretter tabellerne hvis de ikke findes, og sikrer at nye kolonner tilføjes."""
+        """Opretter alle tabeller hvis de ikke findes, og tilføjer manglende kolonner."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
             
@@ -56,6 +56,30 @@ class DatabaseHandler:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     dato TEXT NOT NULL,
                     vaegt REAL NOT NULL
+                )
+            """)
+
+            # Løb
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS running_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    dato TEXT NOT NULL,
+                    dist_km REAL DEFAULT 0,
+                    tid TEXT DEFAULT '',
+                    pace TEXT DEFAULT '',
+                    noter TEXT DEFAULT ''
+                )
+            """)
+
+            # Svømning
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS swimming_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    dato TEXT NOT NULL,
+                    dist_meter INTEGER DEFAULT 0,
+                    tid TEXT DEFAULT '',
+                    fokus TEXT DEFAULT '',
+                    noter TEXT DEFAULT ''
                 )
             """)
             conn.commit()
@@ -169,11 +193,7 @@ class DatabaseHandler:
 
     # --- Kropsvægt ---
     def read_bodyweight_log(self) -> pd.DataFrame:
-        query = """
-            SELECT id, dato AS "Dato", vaegt AS "Kropsvægt (kg)"
-            FROM bodyweight_log
-            ORDER BY dato ASC, id ASC
-        """
+        query = 'SELECT id, dato AS "Dato", vaegt AS "Kropsvægt (kg)" FROM bodyweight_log ORDER BY dato ASC, id ASC'
         with self._get_connection() as conn:
             return pd.read_sql_query(query, conn)
 
@@ -185,4 +205,36 @@ class DatabaseHandler:
     def delete_bodyweight_entry_by_id(self, entry_id: int) -> None:
         with self._get_connection() as conn:
             conn.execute("DELETE FROM bodyweight_log WHERE id = ?", (entry_id,))
+            conn.commit()
+
+    # --- Løb ---
+    def read_running_log(self) -> pd.DataFrame:
+        query = 'SELECT id, dato AS "Dato", dist_km AS "Distance (km)", tid AS "Tid", pace AS "Pace", noter AS "Noter" FROM running_log ORDER BY dato ASC, id ASC'
+        with self._get_connection() as conn:
+            return pd.read_sql_query(query, conn)
+
+    def add_running_entry(self, dato: str, dist_km: float, tid: str, pace: str, noter: str) -> None:
+        with self._get_connection() as conn:
+            conn.execute("INSERT INTO running_log (dato, dist_km, tid, pace, noter) VALUES (?, ?, ?, ?, ?)", (dato, dist_km, tid, pace, noter))
+            conn.commit()
+
+    def delete_running_entry_by_id(self, entry_id: int) -> None:
+        with self._get_connection() as conn:
+            conn.execute("DELETE FROM running_log WHERE id = ?", (entry_id,))
+            conn.commit()
+
+    # --- Svømning ---
+    def read_swimming_log(self) -> pd.DataFrame:
+        query = 'SELECT id, dato AS "Dato", dist_meter AS "Distance (m)", tid AS "Tid", fokus AS "Fokus / Øvelser", noter AS "Noter" FROM swimming_log ORDER BY dato ASC, id ASC'
+        with self._get_connection() as conn:
+            return pd.read_sql_query(query, conn)
+
+    def add_swimming_entry(self, dato: str, dist_meter: int, tid: str, fokus: str, noter: str) -> None:
+        with self._get_connection() as conn:
+            conn.execute("INSERT INTO swimming_log (dato, dist_meter, tid, fokus, noter) VALUES (?, ?, ?, ?, ?)", (dato, dist_meter, tid, fokus, noter))
+            conn.commit()
+
+    def delete_swimming_entry_by_id(self, entry_id: int) -> None:
+        with self._get_connection() as conn:
+            conn.execute("DELETE FROM swimming_log WHERE id = ?", (entry_id,))
             conn.commit()

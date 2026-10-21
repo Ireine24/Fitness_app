@@ -10,6 +10,8 @@ class FitnessModel:
         self.db_handler = DatabaseHandler(db_path)
         self.df: pd.DataFrame | None = None
         self.df_bodyweight: pd.DataFrame | None = None
+        self.df_running: pd.DataFrame | None = None
+        self.df_swimming: pd.DataFrame | None = None
 
     def set_file_path(self, path: str):
         self.file_path = path
@@ -25,6 +27,14 @@ class FitnessModel:
         if not self.df_bodyweight.empty:
             self.df_bodyweight["Dato"] = pd.to_datetime(self.df_bodyweight["Dato"])
 
+        self.df_running = self.db_handler.read_running_log()
+        if not self.df_running.empty:
+            self.df_running["Dato"] = pd.to_datetime(self.df_running["Dato"])
+
+        self.df_swimming = self.db_handler.read_swimming_log()
+        if not self.df_swimming.empty:
+            self.df_swimming["Dato"] = pd.to_datetime(self.df_swimming["Dato"])
+
     def get_exercises(self) -> list[str]:
         if self.df is None or self.df.empty:
             return []
@@ -35,7 +45,6 @@ class FitnessModel:
             return None
 
         if exercise == "Alle øvelser" or not exercise:
-            # Udregn gennemsnitlig estimeret 1RM pr. dato på tværs af alle øvelser
             return (
                 self.df.groupby("Dato", as_index=False)["Estimeret_1RM"]
                 .mean()
@@ -88,3 +97,21 @@ class FitnessModel:
             return
         entry_id = int(self.df_bodyweight.iloc[row_idx]["id"])
         self.db_handler.delete_bodyweight_entry_by_id(entry_id)
+
+    def add_running_entry(self, dato: str, dist_km: float, tid: str, pace: str, noter: str):
+        self.db_handler.add_running_entry(dato, dist_km, tid, pace, noter)
+
+    def delete_running_entry(self, row_idx: int):
+        if self.df_running is None or row_idx < 0 or row_idx >= len(self.df_running):
+            return
+        entry_id = int(self.df_running.iloc[row_idx]["id"])
+        self.db_handler.delete_running_entry_by_id(entry_id)
+
+    def add_swimming_entry(self, dato: str, dist_meter: int, tid: str, fokus: str, noter: str):
+        self.db_handler.add_swimming_entry(dato, dist_meter, tid, fokus, noter)
+
+    def delete_swimming_entry(self, row_idx: int):
+        if self.df_swimming is None or row_idx < 0 or row_idx >= len(self.df_swimming):
+            return
+        entry_id = int(self.df_swimming.iloc[row_idx]["id"])
+        self.db_handler.delete_swimming_entry_by_id(entry_id)
