@@ -7,7 +7,6 @@ from view.plot_widget import PlotWidget
 from view.table_widget import TableWidget
 from view.bodyweight_widget import BodyweightWidget
 from view.program_widget import ProgramWidget
-from view.entry_form import EntryFormWidget
 from view.home_widget import HomeWidget
 
 
@@ -22,7 +21,6 @@ class MainWindow(QMainWindow):
         main_layout = QVBoxLayout(central_widget)
 
         self.top_bar = TopBarWidget(default_file)
-        self.entry_form = EntryFormWidget()
 
         # Tabs
         self.tabs = QTabWidget()
@@ -32,16 +30,18 @@ class MainWindow(QMainWindow):
         self.bw_widget = BodyweightWidget()
         self.program_widget = ProgramWidget()
 
+        # Gør entry_form let tilgængelig via hovedvinduet, så controlleren stadig kan nå den
+        self.entry_form = self.table_widget.entry_form
+
         # Tilføj fanerne (Forside først)
         self.tabs.addTab(self.home_widget, "Forside")
         self.tabs.addTab(self.plot_widget, "Styrkeudvikling (Graf)")
-        self.tabs.addTab(self.table_widget, "Træningsoversigt (Pas & Løft)")
+        self.tabs.addTab(self.table_widget, "Træningsoversigt (Pas && Løft)")
         self.tabs.addTab(self.bw_widget, "Kropsvægt")
         self.tabs.addTab(self.program_widget, "Træningsprogram")
 
         main_layout.addWidget(self.top_bar)
         main_layout.addWidget(self.tabs, stretch=1)
-        main_layout.addWidget(self.entry_form)
 
     def prompt_file_selection(self) -> str:
         fil, _ = QFileDialog.getOpenFileName(

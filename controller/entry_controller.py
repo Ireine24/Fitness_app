@@ -19,14 +19,12 @@ class EntryController:
                 dato=data["dato"],
                 ovelse=data["ovelse"],
                 vaegt=data["vaegt"],
-                reps=data["reps"]
+                reps=data["reps"],
+                program=data.get("program", ""),
+                traening=data.get("traening", "")
             )
-            self.view.show_info("Succes", "Nyt pas blev gemt i Excel!")
+            self.view.show_info("Succes", "Nyt løft blev gemt!")
             return True
-        except PermissionError:
-            self.view.show_error("Fejl", "Luk venligst Excel-programmet, da filen er låst.")
-        except FileNotFoundError as e:
-            self.view.show_warning("Advarsel", str(e))
         except Exception as e:
             self.view.show_error("Fejl", f"Kunne ikke gemme:\n{e}")
 

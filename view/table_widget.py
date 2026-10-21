@@ -2,24 +2,32 @@ import pandas as pd
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, 
     QTableWidgetItem, QPushButton, QHeaderView, QAbstractItemView,
-    QLabel, QSplitter
+    QLabel, QSplitter, QComboBox
 )
 from PyQt6.QtCore import Qt, pyqtSignal
+from view.entry_form import EntryFormWidget
+from model.workout_program import WORKOUT_PROGRAMS
 
 
 class TableWidget(QWidget):
-    # Signal der udløses når et sæt ændres: (row_idx, column_idx, new_value)
     set_item_changed = pyqtSignal(int, int, str)
+    session_meta_changed = pyqtSignal(str, str, str)
+    delete_set_signal = pyqtSignal(int)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 10, 10, 10)
-        layout.setSpacing(8)
+        layout.setSpacing(10)
 
+        # 1. Indtastningsformular øverst
+        self.entry_form = EntryFormWidget()
+        layout.addWidget(self.entry_form)
+
+        # 2. Splitter til tabellerne
         splitter = QSplitter(Qt.Orientation.Vertical)
 
-        # --- 1. Øverste sektion: Oversigt over træningspas ---
+        # Træningspas oversigt
         top_container = QWidget()
         top_layout = QVBoxLayout(top_container)
         top_layout.setContentsMargins(0, 0, 0, 0)
@@ -33,10 +41,9 @@ class TableWidget(QWidget):
         self.table_sessions.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.table_sessions.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         top_layout.addWidget(self.table_sessions)
-
         splitter.addWidget(top_container)
 
-        # --- 2. Nederste sektion: Enkelte løft (redigerbare) ---
+        # Detaljer / enkelte løft
         bottom_container = QWidget()
         bottom_layout = QVBoxLayout(bottom_container)
         bottom_layout.setContentsMargins(0, 6, 0, 0)
@@ -48,17 +55,27 @@ class TableWidget(QWidget):
         self.table_details = QTableWidget()
         self.table_details.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table_details.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-        # Tillad redigering direkte i tabellen ved dobbeltklik/skrivning
-        self.table_details.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked | QAbstractItemView.EditTrigger.EditKeyPressed | QAbstractItemView.EditTrigger.SelectedClicked)
+        self.table_details.setEditTriggers(
+            QAbstractItemView.EditTrigger.DoubleClicked 
+            | QAbstractItemView.EditTrigger.EditKeyPressed 
+            | QAbstractItemView.EditTrigger.SelectedClicked
+        )
         bottom_layout.addWidget(self.table_details)
-
-        # Forbind ændringer i celler
         self.table_details.cellChanged.connect(self._on_cell_changed)
+
+        # Slet-knap til enkelt sæt
+        btn_del_set_layout = QHBoxLayout()
+        btn_del_set_layout.addStretch()
+        self.btn_delete_set = QPushButton("Slet valgt sæt / løft")
+        self.btn_delete_set.setStyleSheet("background-color: #8E24AA; color: white; padding: 4px 10px; font-weight: bold; border-radius: 4px;")
+        self.btn_delete_set.clicked.connect(self._on_delete_set_clicked)
+        btn_del_set_layout.addWidget(self.btn_delete_set)
+        bottom_layout.addLayout(btn_del_set_layout)
 
         splitter.addWidget(bottom_container)
         layout.addWidget(splitter, stretch=1)
 
-        # --- Knap til sletning ---
+        # Slet-knap til hele passet i bunden
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
         self.btn_delete = QPushButton("Slet valgt træningspas")
@@ -75,40 +92,125 @@ class TableWidget(QWidget):
         if item:
             self.set_item_changed.emit(row, col, item.text())
 
+    def _on_delete_set_clicked(self):
+        selected_rows = self.table_details.selectionModel().selectedRows()
+        if selected_rows:
+            self.delete_set_signal.emit(selected_rows[0].row())
+
+    def _get_traening_options(self, program_name: str) -> list[str]:
+        options = ["-- Vælg træning --"]
+        if program_name in WORKOUT_PROGRAMS:
+            for dag, info in WORKOUT_PROGRAMS[program_name].items():
+                options.append(f"{dag} ({info['title']})")
+        else:
+            for prog_dict in WORKOUT_PROGRAMS.values():
+                for dag, info in prog_dict.items():
+                    label = f"{dag} ({info['title']})"
+                    if label not in options:
+                        options.append(label)
+        return options
+
     def populate_sessions(self, df_sessions: pd.DataFrame | None):
-        """Udfylder den øverste oversigtstabel."""
+        self._is_populating = True
         self.table_sessions.clear()
         if df_sessions is None or df_sessions.empty:
             self.table_sessions.setRowCount(0)
             self.table_sessions.setColumnCount(0)
             self.table_details.clear()
             self.table_details.setRowCount(0)
+            self._is_populating = False
             return
 
-        cols = ["Dato", "Træningspas", "Sæt", "Total volumen (kg)", "Maks 1RM (kg)"]
+        cols = ["Dato", "Træningspas", "Træningsprogram", "Træning (Dag / Split)", "Sæt", "Total volumen (kg)", "Maks 1RM (kg)"]
         self.table_sessions.setColumnCount(len(cols))
         self.table_sessions.setHorizontalHeaderLabels(cols)
         self.table_sessions.setRowCount(len(df_sessions))
 
+        program_options = ["-- Vælg program --"] + list(WORKOUT_PROGRAMS.keys())
+
         for row_idx, (_, row) in enumerate(df_sessions.iterrows()):
-            self.table_sessions.setItem(row_idx, 0, QTableWidgetItem(str(row["Dato"])))
-            self.table_sessions.setItem(row_idx, 1, QTableWidgetItem(str(row["Træningspas"])))
-            self.table_sessions.setItem(row_idx, 2, QTableWidgetItem(str(row["Sæt"])))
-            self.table_sessions.setItem(row_idx, 3, QTableWidgetItem(f"{float(row['Total volumen (kg)']):.1f} kg"))
-            self.table_sessions.setItem(row_idx, 4, QTableWidgetItem(f"{float(row['Maks 1RM (kg)']):.1f} kg"))
+            dato_str = str(row["Dato"])
+            pas_str = str(row["Træningspas"])
+            saved_prog = str(row.get("Program", "") or "")
+            saved_tr = str(row.get("Træning", "") or "")
+
+            self.table_sessions.setItem(row_idx, 0, QTableWidgetItem(dato_str))
+            self.table_sessions.setItem(row_idx, 1, QTableWidgetItem(pas_str))
+
+            combo_prog = QComboBox()
+            combo_prog.addItems(program_options)
+            if saved_prog and saved_prog in program_options:
+                combo_prog.setCurrentText(saved_prog)
+            else:
+                combo_prog.setCurrentIndex(0)
+
+            combo_tr = QComboBox()
+            tr_options = self._get_traening_options(saved_prog)
+            combo_tr.addItems(tr_options)
+            if saved_tr:
+                if saved_tr not in tr_options:
+                    combo_tr.addItem(saved_tr)
+                combo_tr.setCurrentText(saved_tr)
+            else:
+                combo_tr.setCurrentIndex(0)
+
+            combo_prog.currentTextChanged.connect(
+                lambda text, r=row_idx, d=dato_str, cb_tr=combo_tr: self._on_row_program_changed(r, d, text, cb_tr)
+            )
+            combo_tr.currentTextChanged.connect(
+                lambda text, r=row_idx, d=dato_str, cb_pr=combo_prog: self._on_row_traening_changed(r, d, cb_pr.currentText(), text)
+            )
+
+            self.table_sessions.setCellWidget(row_idx, 2, combo_prog)
+            self.table_sessions.setCellWidget(row_idx, 3, combo_tr)
+
+            self.table_sessions.setItem(row_idx, 4, QTableWidgetItem(str(row["Sæt"])))
+            self.table_sessions.setItem(row_idx, 5, QTableWidgetItem(f"{float(row['Total volumen (kg)']):.1f} kg"))
+            self.table_sessions.setItem(row_idx, 6, QTableWidgetItem(f"{float(row['Maks 1RM (kg)']):.1f} kg"))
 
         header = self.table_sessions.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)
+
+        self._is_populating = False
 
         if len(df_sessions) > 0 and self.table_sessions.currentRow() < 0:
             self.table_sessions.selectRow(len(df_sessions) - 1)
 
+    def _on_row_program_changed(self, row_idx: int, dato: str, new_prog: str, combo_tr: QComboBox):
+        if self._is_populating:
+            return
+        self.table_sessions.selectRow(row_idx)
+        clean_prog = "" if new_prog.startswith("--") else new_prog
+
+        combo_tr.blockSignals(True)
+        current_tr = combo_tr.currentText()
+        combo_tr.clear()
+        new_options = self._get_traening_options(clean_prog)
+        combo_tr.addItems(new_options)
+        if current_tr in new_options:
+            combo_tr.setCurrentText(current_tr)
+        else:
+            combo_tr.setCurrentIndex(0)
+        combo_tr.blockSignals(False)
+
+        clean_tr = "" if combo_tr.currentText().startswith("--") else combo_tr.currentText()
+        self.session_meta_changed.emit(dato, clean_prog, clean_tr)
+
+    def _on_row_traening_changed(self, row_idx: int, dato: str, current_prog: str, new_tr: str):
+        if self._is_populating:
+            return
+        self.table_sessions.selectRow(row_idx)
+        clean_prog = "" if current_prog.startswith("--") else current_prog
+        clean_tr = "" if new_tr.startswith("--") else new_tr
+        self.session_meta_changed.emit(dato, clean_prog, clean_tr)
+
     def populate_session_details(self, df_details: pd.DataFrame | None, dato_str: str, session_navn: str = ""):
-        """Udfylder den nederste tabel med de enkelte sæt."""
         self._is_populating = True
         self.table_details.clear()
         titel = f"{session_navn} ({dato_str})" if session_navn else dato_str
@@ -127,17 +229,14 @@ class TableWidget(QWidget):
 
         for row_idx, (_, row) in enumerate(df_details.iterrows()):
             self.table_details.setItem(row_idx, 0, QTableWidgetItem(str(row.get("Øvelse", ""))))
-            
-            # Rens vægt og reps for tekst-enheder ved visning
             w_val = float(row.get("Vægt (kg)", 0))
             self.table_details.setItem(row_idx, 1, QTableWidgetItem(str(w_val)))
-            
             r_val = int(row.get("Reps", 0))
             self.table_details.setItem(row_idx, 2, QTableWidgetItem(str(r_val)))
             
             est_val = float(row.get("Estimeret 1RM (kg)", 0.0))
             item_1rm = QTableWidgetItem(f"{est_val:.1f}")
-            item_1rm.setFlags(item_1rm.flags() & ~Qt.ItemFlag.ItemIsEditable) # 1RM kan ikke redigeres manuelt (beregnes)
+            item_1rm.setFlags(item_1rm.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.table_details.setItem(row_idx, 3, item_1rm)
             
             self.table_details.setItem(row_idx, 4, QTableWidgetItem(str(row.get("Noter", ""))))
@@ -160,4 +259,10 @@ class TableWidget(QWidget):
         item_name = self.table_sessions.item(row, 1)
         dato = item_date.text() if item_date else None
         navn = item_name.text() if item_name else None
+
+        combo_tr = self.table_sessions.cellWidget(row, 3)
+        if isinstance(combo_tr, QComboBox):
+            tr_text = combo_tr.currentText()
+            if not tr_text.startswith("--"):
+                navn = f"{navn} - {tr_text}"
         return dato, navn

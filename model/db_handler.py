@@ -13,7 +13,7 @@ class DatabaseHandler:
         return conn
 
     def _init_db(self):
-        """Opretter tabellerne hvis de ikke findes."""
+        """Opretter tabellerne hvis de ikke findes, og sikrer at nye kolonner tilføjes."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
             
@@ -22,9 +22,19 @@ class DatabaseHandler:
                 CREATE TABLE IF NOT EXISTS workout_sessions (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     dato TEXT NOT NULL UNIQUE,
+                    program TEXT DEFAULT '',
+                    traening TEXT DEFAULT '',
                     noter TEXT DEFAULT ''
                 )
             """)
+
+            # Sikr at eksisterende databaser har program og traening kolonnerne
+            cursor.execute("PRAGMA table_info(workout_sessions)")
+            existing_cols = [col[1] for col in cursor.fetchall()]
+            if "program" not in existing_cols:
+                cursor.execute("ALTER TABLE workout_sessions ADD COLUMN program TEXT DEFAULT ''")
+            if "traening" not in existing_cols:
+                cursor.execute("ALTER TABLE workout_sessions ADD COLUMN traening TEXT DEFAULT ''")
 
             # Enkelte løft knyttet til et træningspas
             cursor.execute("""
@@ -52,7 +62,6 @@ class DatabaseHandler:
 
     # --- Træningspas og løft ---
     def read_all_sets(self) -> pd.DataFrame:
-        """Henter alle registrerede løft sammen med datoen fra passet."""
         query = """
             SELECT s.id AS set_id, w.id AS session_id, w.dato AS "Dato", 
                    s.ovelse AS "Øvelse", s.vaegt AS "Vægt (kg)", 
@@ -66,11 +75,12 @@ class DatabaseHandler:
             return pd.read_sql_query(query, conn)
 
     def read_workout_sessions_summary(self) -> pd.DataFrame:
-        """Henter en samlet oversigt over hvert enkelt træningspas nummereret opad."""
         query = """
             SELECT 
                 w.id AS session_id,
                 w.dato AS "Dato",
+                COALESCE(w.program, '') AS "Program",
+                COALESCE(w.traening, '') AS "Træning",
                 COUNT(s.id) AS "Sæt",
                 ROUND(TOTAL(s.vaegt * s.reps), 1) AS "Total volumen (kg)",
                 ROUND(COALESCE(MAX(s.estimeret_1rm), 0), 1) AS "Maks 1RM (kg)"
@@ -86,7 +96,6 @@ class DatabaseHandler:
             return df
 
     def read_sets_for_session(self, session_date: str) -> pd.DataFrame:
-        """Henter de enkelte løft for et specifikt træningspas baseret på dato."""
         query = """
             SELECT s.id, s.ovelse AS "Øvelse", s.vaegt AS "Vægt (kg)", 
                    s.reps AS "Reps", s.estimeret_1rm AS "Estimeret 1RM (kg)", 
@@ -99,17 +108,29 @@ class DatabaseHandler:
         with self._get_connection() as conn:
             return pd.read_sql_query(query, conn, params=(session_date,))
 
-    def add_training_entry(self, dato: str, ovelse: str, vaegt: float, reps: int, est_1rm: float, noter: str = "") -> None:
-        """Tilføjer et løft. Opretter automatisk træningspasset, hvis datoen ikke findes."""
+    def add_training_entry(
+        self, dato: str, ovelse: str, vaegt: float, reps: int, est_1rm: float, 
+        program: str = "", traening: str = "", noter: str = ""
+    ) -> None:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             
-            cursor.execute("SELECT id FROM workout_sessions WHERE dato = ?", (dato,))
+            cursor.execute("SELECT id, program, traening FROM workout_sessions WHERE dato = ?", (dato,))
             row = cursor.fetchone()
             if row:
-                session_id = row[0]
+                session_id, existing_prog, existing_tr = row
+                new_prog = program if program else (existing_prog or "")
+                new_tr = traening if (traening and traening != "Alle dage / øvelser") else (existing_tr or "")
+                cursor.execute(
+                    "UPDATE workout_sessions SET program = ?, traening = ? WHERE id = ?",
+                    (new_prog, new_tr, session_id)
+                )
             else:
-                cursor.execute("INSERT INTO workout_sessions (dato) VALUES (?)", (dato,))
+                clean_tr = traening if traening != "Alle dage / øvelser" else ""
+                cursor.execute(
+                    "INSERT INTO workout_sessions (dato, program, traening) VALUES (?, ?, ?)",
+                    (dato, program, clean_tr)
+                )
                 session_id = cursor.lastrowid
             
             cursor.execute("""
@@ -118,8 +139,15 @@ class DatabaseHandler:
             """, (session_id, ovelse, vaegt, reps, est_1rm, noter))
             conn.commit()
 
+    def update_session_metadata(self, dato: str, program: str, traening: str) -> None:
+        with self._get_connection() as conn:
+            conn.execute(
+                "UPDATE workout_sessions SET program = ?, traening = ? WHERE dato = ?",
+                (program, traening, dato)
+            )
+            conn.commit()
+
     def update_training_set(self, set_id: int, ovelse: str, vaegt: float, reps: int, est_1rm: float, noter: str) -> None:
-        """Opdaterer et eksisterende sæt i databasen."""
         query = """
             UPDATE workout_sets 
             SET ovelse = ?, vaegt = ?, reps = ?, estimeret_1rm = ?, noter = ?
@@ -130,9 +158,13 @@ class DatabaseHandler:
             conn.commit()
 
     def delete_workout_session_by_date(self, dato: str) -> None:
-        """Sletter hele træningspasset og alle dets tilhørende sæt."""
         with self._get_connection() as conn:
             conn.execute("DELETE FROM workout_sessions WHERE dato = ?", (dato,))
+            conn.commit()
+
+    def delete_training_set_by_id(self, set_id: int) -> None:
+        with self._get_connection() as conn:
+            conn.execute("DELETE FROM workout_sets WHERE id = ?", (set_id,))
             conn.commit()
 
     # --- Kropsvægt ---

@@ -35,14 +35,18 @@ class FitnessModel:
             return None
 
         if exercise == "Alle øvelser" or not exercise:
-            data = self.df
+            # Udregn gennemsnitlig estimeret 1RM pr. dato på tværs af alle øvelser
+            return (
+                self.df.groupby("Dato", as_index=False)["Estimeret_1RM"]
+                .mean()
+                .assign(Øvelse="Gennemsnitlig samlet styrke")
+            )
         else:
             data = self.df[self.df["Øvelse"] == exercise]
-
-        return (
-            data.groupby(["Dato", "Øvelse"], as_index=False)["Estimeret_1RM"]
-            .max()
-        )
+            return (
+                data.groupby(["Dato", "Øvelse"], as_index=False)["Estimeret_1RM"]
+                .max()
+            )
 
     def get_workout_sessions(self) -> pd.DataFrame:
         return self.db_handler.read_workout_sessions_summary()
@@ -50,12 +54,14 @@ class FitnessModel:
     def get_session_details(self, session_date: str) -> pd.DataFrame:
         return self.db_handler.read_sets_for_session(session_date)
 
-    def add_entry(self, dato: str, ovelse: str, vaegt: float, reps: int):
+    def add_entry(self, dato: str, ovelse: str, vaegt: float, reps: int, program: str = "", traening: str = ""):
         est_1rm = calculate_epley_1rm(vaegt, reps)
-        self.db_handler.add_training_entry(dato, ovelse, vaegt, reps, est_1rm)
+        self.db_handler.add_training_entry(dato, ovelse, vaegt, reps, est_1rm, program=program, traening=traening)
+
+    def update_session_info(self, dato: str, program: str, traening: str):
+        self.db_handler.update_session_metadata(dato, program, traening)
 
     def update_set_by_index(self, session_date: str, row_idx: int, ovelse: str, vaegt: float, reps: int, noter: str):
-        """Opdaterer et specifikt sæt baseret på den valgte række i detaljetabellen."""
         details_df = self.get_session_details(session_date)
         if details_df is None or row_idx < 0 or row_idx >= len(details_df):
             return
@@ -63,6 +69,13 @@ class FitnessModel:
         set_id = int(details_df.iloc[row_idx]["id"])
         est_1rm = calculate_epley_1rm(vaegt, reps)
         self.db_handler.update_training_set(set_id, ovelse, vaegt, reps, est_1rm, noter)
+
+    def delete_set_by_index(self, session_date: str, row_idx: int):
+        details_df = self.get_session_details(session_date)
+        if details_df is None or row_idx < 0 or row_idx >= len(details_df):
+            return
+        set_id = int(details_df.iloc[row_idx]["id"])
+        self.db_handler.delete_training_set_by_id(set_id)
 
     def delete_workout_session(self, dato: str):
         self.db_handler.delete_workout_session_by_date(dato)

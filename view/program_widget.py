@@ -1,9 +1,9 @@
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
-    QScrollArea, QFrame
+    QScrollArea, QFrame, QComboBox
 )
 from PyQt6.QtCore import Qt
-from model.workout_program import WORKOUT_PROGRAM
+from model.workout_program import WORKOUT_PROGRAMS
 
 
 class ProgramWidget(QWidget):
@@ -11,24 +11,57 @@ class ProgramWidget(QWidget):
         super().__init__(parent)
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(10, 10, 10, 10)
+        main_layout.setSpacing(10)
 
-        # ScrollArea så programmet kan navigeres selv på mindre skærme
+        # 1. Top-sektion med valg af program
+        top_layout = QHBoxLayout()
+        lbl_select = QLabel("Vælg træningsprogram:")
+        lbl_select.setStyleSheet("font-weight: bold; font-size: 13px; color: #4CAF50;")
+        top_layout.addWidget(lbl_select)
+
+        self.combo_program = QComboBox()
+        self.combo_program.addItems(list(WORKOUT_PROGRAMS.keys()))
+        self.combo_program.setMinimumWidth(250)
+        self.combo_program.currentIndexChanged.connect(self._on_program_changed)
+        top_layout.addWidget(self.combo_program)
+        top_layout.addStretch()
+
+        main_layout.addLayout(top_layout)
+
+        # 2. ScrollArea til dag-kortene
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
 
-        container = QWidget()
-        cards_layout = QHBoxLayout(container)
-        cards_layout.setSpacing(14)
-        cards_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self.container = QWidget()
+        self.cards_layout = QHBoxLayout(self.container)
+        self.cards_layout.setSpacing(14)
+        self.cards_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
-        for day, info in WORKOUT_PROGRAM.items():
-            card = self._create_day_card(day, info)
-            cards_layout.addWidget(card)
-
-        scroll.setWidget(container)
+        scroll.setWidget(self.container)
         main_layout.addWidget(scroll)
+
+        # Indlæs standardprogrammet ved opstart
+        self._load_program(list(WORKOUT_PROGRAMS.keys())[0])
+
+    def _on_program_changed(self, index: int):
+        program_name = self.combo_program.itemText(index)
+        self._load_program(program_name)
+
+    def _load_program(self, program_name: str):
+        # Ryd eksisterende kort
+        while self.cards_layout.count():
+            item = self.cards_layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
+
+        # Tilføj nye kort baseret på det valgte program
+        program_data = WORKOUT_PROGRAMS[program_name]
+        for day, info in program_data.items():
+            card = self._create_day_card(day, info)
+            self.cards_layout.addWidget(card)
 
     def _create_day_card(self, day: str, info: dict) -> QFrame:
         card = QFrame()
@@ -51,13 +84,13 @@ class ProgramWidget(QWidget):
         lbl_day.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(lbl_day)
 
-        # Split (Push/Pull/Ben)
+        # Titel (F.eks. Push 1 eller Overkrop)
         lbl_title = QLabel(info["title"])
         lbl_title.setStyleSheet("font-size: 14px; font-weight: bold; color: #ffffff;")
         lbl_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(lbl_title)
 
-        # Ekstra bemærkning (+ Mavetræning)
+        # Ekstra bemærkning
         if info["extra"]:
             lbl_extra = QLabel(info["extra"])
             lbl_extra.setStyleSheet("font-size: 11px; font-weight: bold; color: #ff4081;")
