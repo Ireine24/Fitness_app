@@ -27,13 +27,15 @@ class FitnessModel:
         if not self.df_bodyweight.empty:
             self.df_bodyweight["Dato"] = pd.to_datetime(self.df_bodyweight["Dato"])
 
-        self.df_running = self.db_handler.read_running_log()
-        if not self.df_running.empty:
-            self.df_running["Dato"] = pd.to_datetime(self.df_running["Dato"])
+        if hasattr(self.db_handler, "read_running_log"):
+            self.df_running = self.db_handler.read_running_log()
+            if not self.df_running.empty:
+                self.df_running["Dato"] = pd.to_datetime(self.df_running["Dato"])
 
-        self.df_swimming = self.db_handler.read_swimming_log()
-        if not self.df_swimming.empty:
-            self.df_swimming["Dato"] = pd.to_datetime(self.df_swimming["Dato"])
+        if hasattr(self.db_handler, "read_swimming_log"):
+            self.df_swimming = self.db_handler.read_swimming_log()
+            if not self.df_swimming.empty:
+                self.df_swimming["Dato"] = pd.to_datetime(self.df_swimming["Dato"])
 
     def get_exercises(self) -> list[str]:
         if self.df is None or self.df.empty:
@@ -45,17 +47,110 @@ class FitnessModel:
             return None
 
         if exercise == "Alle øvelser" or not exercise:
-            return (
-                self.df.groupby("Dato", as_index=False)["Estimeret_1RM"]
-                .mean()
-                .assign(Øvelse="Gennemsnitlig samlet styrke")
-            )
-        else:
-            data = self.df[self.df["Øvelse"] == exercise]
-            return (
-                data.groupby(["Dato", "Øvelse"], as_index=False)["Estimeret_1RM"]
+            daily_weight = (
+                self.df.groupby(["Dato", "Øvelse"], as_index=False)["Vægt (kg)"]
                 .max()
+                .sort_values("Dato")
             )
+
+            pivot_weight = daily_weight.pivot(index="Dato", columns="Øvelse", values="Vægt (kg)")
+            pivot_weight = pivot_weight.sort_index().ffill()
+
+            kg_changes = pd.DataFrame(index=pivot_weight.index)
+            latest_gains = {}
+            for col in pivot_weight.columns:
+                series = pivot_weight[col].dropna()
+                if not series.empty:
+                    first_val = series.iloc[0]
+                    kg_changes[col] = pivot_weight[col] - first_val
+                    latest_gains[col] = series.iloc[-1] - first_val
+
+            overall_kg = kg_changes.sum(axis=1).reset_index()
+            overall_kg.columns = ["Dato", "Værdi"]
+            overall_kg["Øvelse"] = "Samlet fremgang (kg)"
+
+            sorted_gains = sorted(latest_gains.items(), key=lambda x: x[1], reverse=True)
+            top_str = ", ".join(
+                f"{ex} ({'+' if val >= 0 else ''}{val:g}kg)" 
+                for ex, val in sorted_gains[:3] if val != 0
+            )
+            overall_kg["Top_Bidrag"] = top_str
+            return overall_kg
+        else:
+            data = self.df[self.df["Øvelse"] == exercise].copy()
+            data = data.sort_values(["Dato", "Vægt (kg)", "Reps"], ascending=[True, False, False])
+            best_sets = data.drop_duplicates(subset=["Dato"], keep="first").sort_values("Dato")
+            best_sets = best_sets.rename(columns={"Vægt (kg)": "Værdi"})
+            return best_sets[["Dato", "Øvelse", "Værdi", "Reps"]]
+
+    def get_strength_table_data(self, exercise: str = "Alle øvelser") -> pd.DataFrame | None:
+        """Returnerer en DataFrame skræddersyet til Tabel-visningen under Styrkeudvikling."""
+        if self.df is None or self.df.empty:
+            return None
+
+        # Find bedste sæt pr. dato for hver øvelse
+        sorted_df = self.df.sort_values(["Dato", "Vægt (kg)", "Reps"], ascending=[True, False, False])
+        daily_best = sorted_df.drop_duplicates(subset=["Dato", "Øvelse"], keep="first").sort_values("Dato")
+
+        if exercise == "Alle øvelser" or not exercise:
+            rows = []
+            for ov, grp in daily_best.groupby("Øvelse"):
+                grp = grp.sort_values("Dato")
+                first_row = grp.iloc[0]
+                last_row = grp.iloc[-1]
+                max_w = grp["Vægt (kg)"].max()
+
+                start_w = float(first_row["Vægt (kg)"])
+                start_r = int(first_row["Reps"])
+                curr_w = float(last_row["Vægt (kg)"])
+                curr_r = int(last_row["Reps"])
+
+                diff_kg = curr_w - start_w
+                diff_pct = ((curr_w - start_w) / start_w * 100.0) if start_w > 0 else 0.0
+
+                rows.append({
+                    "Øvelse": ov,
+                    "Startdato": first_row["Dato"].strftime("%Y-%m-%d"),
+                    "Start (Sæt)": f"{start_w:g} kg × {start_r}",
+                    "Seneste dato": last_row["Dato"].strftime("%Y-%m-%d"),
+                    "Nuværende (Sæt)": f"{curr_w:g} kg × {curr_r}",
+                    "PR (Maks kg)": f"{max_w:g} kg",
+                    "Ændring (kg)": diff_kg,
+                    "Ændring (%)": diff_pct,
+                    "Antal pas": len(grp)
+                })
+
+            res_df = pd.DataFrame(rows)
+            if not res_df.empty:
+                res_df = res_df.sort_values("Ændring (kg)", ascending=False).reset_index(drop=True)
+            return res_df
+        else:
+            grp = daily_best[daily_best["Øvelse"] == exercise].sort_values("Dato").copy()
+            if grp.empty:
+                return None
+
+            start_w = float(grp.iloc[0]["Vægt (kg)"])
+            prev_w = start_w
+            rows = []
+            for _, row in grp.iterrows():
+                w = float(row["Vægt (kg)"])
+                r = int(row["Reps"])
+                diff_start = w - start_w
+                diff_prev = w - prev_w
+                diff_pct = ((w - start_w) / start_w * 100.0) if start_w > 0 else 0.0
+                prev_w = w
+
+                rows.append({
+                    "Dato": row["Dato"].strftime("%Y-%m-%d"),
+                    "Øvelse": exercise,
+                    "Vægt (kg)": f"{w:g} kg",
+                    "Reps": str(r),
+                    "Sæt": f"{w:g} kg × {r}",
+                    "Ændring fra sidst": diff_prev,
+                    "Ændring siden start (kg)": diff_start,
+                    "Ændring siden start (%)": diff_pct
+                })
+            return pd.DataFrame(rows)
 
     def get_workout_sessions(self) -> pd.DataFrame:
         return self.db_handler.read_workout_sessions_summary()
