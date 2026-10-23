@@ -6,6 +6,11 @@ from PyQt6.QtCore import QDate
 from model.workout_program import WORKOUT_PROGRAMS
 
 
+class NoScrollComboBox(QComboBox):
+    def wheelEvent(self, event):
+        event.ignore()
+
+
 class EntryFormWidget(QGroupBox):
     def __init__(self, parent=None):
         super().__init__("Tilføj nyt løft", parent)
@@ -28,21 +33,21 @@ class EntryFormWidget(QGroupBox):
         self.input_date.setDate(QDate.currentDate())
         add_field("Dato:", self.input_date, width=105)
 
-        # 2. Program (fast lille bredde)
-        self.input_program = QComboBox()
+        # 2. Program (med NoScroll)
+        self.input_program = NoScrollComboBox()
         self.input_program.addItems(list(WORKOUT_PROGRAMS.keys()))
         self.input_program.currentIndexChanged.connect(self._on_program_changed)
         add_field("Prog:", self.input_program, width=70)
 
-        # 3. Træning
-        self.input_dag = QComboBox()
+        # 3. Træning (med NoScroll)
+        self.input_dag = NoScrollComboBox()
         self.input_dag.currentIndexChanged.connect(self._update_exercise_list)
         add_field("Træning:", self.input_dag, width=150)
 
-        # 4. Øvelse
-        self.input_ovelse = QComboBox()
+        # 4. Øvelse (med NoScroll)
+        self.input_ovelse = NoScrollComboBox()
         self.input_ovelse.setEditable(True)
-        add_field("Øvelse:", self.input_ovelse, width=300)
+        add_field("Øvelse:", self.input_ovelse, width=160)
 
         # Initialiser listerne ud fra første program
         self._on_program_changed()
@@ -52,9 +57,9 @@ class EntryFormWidget(QGroupBox):
         self.input_weight.setRange(0, 500)
         self.input_weight.setSingleStep(2.5)
         self.input_weight.setValue(80.0)
-        add_field("Vægt (kg):", self.input_weight, width=90)
+        add_field("Vægt (kg):", self.input_weight, width=75)
 
-        # 6. Reps
+        # 6. Reps 
         self.input_reps = QSpinBox()
         self.input_reps.setRange(1, 100)
         self.input_reps.setValue(5)

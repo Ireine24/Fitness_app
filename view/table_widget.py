@@ -8,6 +8,9 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from view.entry_form import EntryFormWidget
 from model.workout_program import WORKOUT_PROGRAMS
 
+class NoScrollComboBox(QComboBox):
+    def wheelEvent(self, event):
+        event.ignore()
 
 class TableWidget(QWidget):
     set_item_changed = pyqtSignal(int, int, str)
@@ -20,7 +23,7 @@ class TableWidget(QWidget):
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(10)
 
-        # 1. Indtastningsformular øverst
+        # 1. Indtastningsformular øverst på siden
         self.entry_form = EntryFormWidget()
         layout.addWidget(self.entry_form)
 
@@ -32,9 +35,24 @@ class TableWidget(QWidget):
         top_layout = QVBoxLayout(top_container)
         top_layout.setContentsMargins(0, 0, 0, 0)
         
+        # Header med Dropdown til uger
+        header_layout = QHBoxLayout()
         lbl_sessions = QLabel("Træningspas (Klik på et pas for at se alle løft):")
         lbl_sessions.setStyleSheet("font-weight: bold; font-size: 13px; color: #4CAF50;")
-        top_layout.addWidget(lbl_sessions)
+        header_layout.addWidget(lbl_sessions)
+        
+        header_layout.addStretch()
+        
+        lbl_filter = QLabel("Vis:")
+        lbl_filter.setStyleSheet("font-weight: bold; font-size: 12px; color: #b0b0b0;")
+        header_layout.addWidget(lbl_filter)
+        
+        self.combo_week = NoScrollComboBox()
+        self.combo_week.setMinimumWidth(120)
+        self.combo_week.currentTextChanged.connect(self._on_week_filter_changed)
+        header_layout.addWidget(self.combo_week)
+        
+        top_layout.addLayout(header_layout)
 
         self.table_sessions = QTableWidget()
         self.table_sessions.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -84,6 +102,7 @@ class TableWidget(QWidget):
         layout.addLayout(btn_layout)
 
         self._is_populating = False
+        self.row_weeks = []
 
     def _on_cell_changed(self, row: int, col: int):
         if self._is_populating:
@@ -112,24 +131,44 @@ class TableWidget(QWidget):
 
     def populate_sessions(self, df_sessions: pd.DataFrame | None):
         self._is_populating = True
+        current_filter = self.combo_week.currentText()
+        
         self.table_sessions.clear()
         if df_sessions is None or df_sessions.empty:
             self.table_sessions.setRowCount(0)
             self.table_sessions.setColumnCount(0)
             self.table_details.clear()
             self.table_details.setRowCount(0)
+            self.combo_week.clear()
             self._is_populating = False
             return
 
         cols = ["Dato", "Træningspas", "Træningsprogram", "Træning (Dag / Split)", "Sæt", "Total volumen (kg)", "Maks 1RM (kg)"]
         self.table_sessions.setColumnCount(len(cols))
         self.table_sessions.setHorizontalHeaderLabels(cols)
-        self.table_sessions.setRowCount(len(df_sessions))
+        
+        df = df_sessions.copy()
+        df['Dato_dt'] = pd.to_datetime(df['Dato'])
+        df = df.sort_values('Dato_dt', ascending=True)
+        
+        self.table_sessions.setRowCount(len(df))
 
         program_options = ["-- Vælg program --"] + list(WORKOUT_PROGRAMS.keys())
+        
+        unique_weeks = []
+        self.row_weeks = []
 
-        for row_idx, (_, row) in enumerate(df_sessions.iterrows()):
+        for row_idx, (_, row) in enumerate(df.iterrows()):
             dato_str = str(row["Dato"])
+            dato_dt = row["Dato_dt"]
+            
+            # Udregn uge
+            iso_year, iso_week, _ = dato_dt.isocalendar()
+            week_str = f"Uge {iso_week} - {iso_year}"
+            if week_str not in unique_weeks:
+                unique_weeks.append(week_str)
+            self.row_weeks.append(week_str)
+            
             pas_str = str(row["Træningspas"])
             saved_prog = str(row.get("Program", "") or "")
             saved_tr = str(row.get("Træning", "") or "")
@@ -137,14 +176,15 @@ class TableWidget(QWidget):
             self.table_sessions.setItem(row_idx, 0, QTableWidgetItem(dato_str))
             self.table_sessions.setItem(row_idx, 1, QTableWidgetItem(pas_str))
 
-            combo_prog = QComboBox()
+            # Brug NoScrollComboBox i selve tabellen
+            combo_prog = NoScrollComboBox()
             combo_prog.addItems(program_options)
             if saved_prog and saved_prog in program_options:
                 combo_prog.setCurrentText(saved_prog)
             else:
                 combo_prog.setCurrentIndex(0)
 
-            combo_tr = QComboBox()
+            combo_tr = NoScrollComboBox()
             tr_options = self._get_traening_options(saved_prog)
             combo_tr.addItems(tr_options)
             if saved_tr:
@@ -177,17 +217,40 @@ class TableWidget(QWidget):
         header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)
 
-        self._is_populating = False
+        # Opdater dropdown med uger
+        self.combo_week.blockSignals(True)
+        self.combo_week.clear()
+        self.combo_week.addItem("Alle uger")
+        self.combo_week.addItems(unique_weeks)
+        if current_filter in unique_weeks or current_filter == "Alle uger":
+            self.combo_week.setCurrentText(current_filter)
+        else:
+            self.combo_week.setCurrentIndex(0)
+        self.combo_week.blockSignals(False)
 
-        if len(df_sessions) > 0 and self.table_sessions.currentRow() < 0:
-            self.table_sessions.selectRow(len(df_sessions) - 1)
+        self._is_populating = False
+        
+        # Anvend filteret
+        self._on_week_filter_changed(self.combo_week.currentText())
+
+        if len(df) > 0 and self.table_sessions.currentRow() < 0:
+            self.table_sessions.selectRow(len(df) - 1)
+
+    def _on_week_filter_changed(self, selected_week: str):
+        if not hasattr(self, 'row_weeks'):
+            return
+        
+        for row in range(self.table_sessions.rowCount()):
+            if selected_week == "Alle uger" or self.row_weeks[row] == selected_week:
+                self.table_sessions.setRowHidden(row, False)
+            else:
+                self.table_sessions.setRowHidden(row, True)
 
     def _on_row_program_changed(self, row_idx: int, dato: str, new_prog: str, combo_tr: QComboBox):
         if self._is_populating:
             return
         self.table_sessions.selectRow(row_idx)
         clean_prog = "" if new_prog.startswith("--") else new_prog
-
         combo_tr.blockSignals(True)
         current_tr = combo_tr.currentText()
         combo_tr.clear()
