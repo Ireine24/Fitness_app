@@ -18,28 +18,39 @@ class MainController:
         self.reload_data()
 
     def _bind_signals(self):
-        # Gå til forsiden via topbar knap og forside-kort
+        # Navigation
         self.view.top_bar.btn_home.clicked.connect(lambda: self.view.tabs.setCurrentIndex(0))
         self.view.home_widget.navigate_to_tab.connect(self.view.tabs.setCurrentIndex)
 
-        # Skift bruger eller databasefil
+        # Bruger og fil
         self.view.top_bar.btn_switch_user.clicked.connect(self._on_switch_user)
         self.view.top_bar.btn_load.clicked.connect(self._on_select_file)
 
-        # Træning og graf-filtrering (inde i plot_widget)
+        # Graf og tilføj løft
         self.view.plot_widget.combo_ovelse.currentIndexChanged.connect(self._on_exercise_changed)
         self.view.entry_form.btn_add.clicked.connect(self._on_add_entry)
         self.view.table_widget.btn_delete.clicked.connect(self._on_delete_entry)
         
-        # Valg og redigering i tabeller
+        # Tabeller (Styrketræning)
         self.view.table_widget.table_sessions.itemSelectionChanged.connect(self._on_session_selected)
         self.view.table_widget.session_meta_changed.connect(self._on_session_meta_changed)
         self.view.table_widget.set_item_changed.connect(self._on_set_edited)
         self.view.table_widget.delete_set_signal.connect(self._on_delete_set)
 
+        # Løb
+        self.view.running_widget.btn_save.clicked.connect(self._on_save_running)
+        self.view.running_widget.btn_delete.clicked.connect(self._on_delete_running)
+
+        # Svømning
+        self.view.swimming_widget.btn_save.clicked.connect(self._on_save_swimming)
+        self.view.swimming_widget.btn_delete.clicked.connect(self._on_delete_swimming)
+
         # Kropsvægt
         self.view.bw_widget.btn_save.clicked.connect(self._on_save_bodyweight)
         self.view.bw_widget.btn_delete.clicked.connect(self._on_delete_bodyweight)
+
+        # Træningsprogrammer opdatering
+        self.view.program_widget.programs_changed.connect(self._on_programs_changed)
 
     def _on_switch_user(self):
         dialog = UserSelectionDialog(users_dir="users", parent=self.view)
@@ -103,6 +114,71 @@ class MainController:
             self.view.show_info("Succes", "Sættet blev slettet.")
         except Exception as e:
             self.view.show_error("Fejl", f"Kunne ikke slette sættet:\n{e}")
+
+    def _on_programs_changed(self):
+        from model.workout_program import WORKOUT_PROGRAMS
+        
+        cb = self.view.entry_form.input_program
+        current = cb.currentText()
+        cb.blockSignals(True)
+        cb.clear()
+        cb.addItems(list(WORKOUT_PROGRAMS.keys()))
+        
+        idx = cb.findText(current)
+        if idx >= 0:
+            cb.setCurrentIndex(idx)
+        else:
+            cb.setCurrentIndex(0)
+            
+        cb.blockSignals(False)
+        self.view.entry_form._on_program_changed()
+        self.reload_data()
+
+    def _on_save_running(self):
+        dato, dist, tid, pace, noter = self.view.running_widget.get_input()
+        try:
+            self.model.add_running_entry(dato, dist, tid, pace, noter)
+            self.reload_data()
+            self.view.show_info("Succes", "Løbetur gemt!")
+        except Exception as e:
+            self.view.show_error("Fejl", f"Kunne ikke gemme løb:\n{e}")
+
+    def _on_delete_running(self):
+        row = self.view.running_widget.get_selected_row()
+        if row < 0:
+            self.view.show_warning("Advarsel", "Vælg et løb i tabellen for at slette.")
+            return
+        if not self.view.ask_confirmation("Bekræft sletning", "Vil du slette dette løb?"):
+            return
+        try:
+            self.model.delete_running_entry(row)
+            self.reload_data()
+            self.view.show_info("Succes", "Løbetur slettet.")
+        except Exception as e:
+            self.view.show_error("Fejl", f"Kunne ikke slette:\n{e}")
+
+    def _on_save_swimming(self):
+        dato, dist, tid, fokus, noter = self.view.swimming_widget.get_input()
+        try:
+            self.model.add_swimming_entry(dato, dist, tid, fokus, noter)
+            self.reload_data()
+            self.view.show_info("Succes", "Svømmetræning gemt!")
+        except Exception as e:
+            self.view.show_error("Fejl", f"Kunne ikke gemme svømning:\n{e}")
+
+    def _on_delete_swimming(self):
+        row = self.view.swimming_widget.get_selected_row()
+        if row < 0:
+            self.view.show_warning("Advarsel", "Vælg et svømmepas i tabellen for at slette.")
+            return
+        if not self.view.ask_confirmation("Bekræft sletning", "Vil du slette dette svømmepas?"):
+            return
+        try:
+            self.model.delete_swimming_entry(row)
+            self.reload_data()
+            self.view.show_info("Succes", "Svømmepas slettet.")
+        except Exception as e:
+            self.view.show_error("Fejl", f"Kunne ikke slette:\n{e}")
 
     def _on_select_file(self):
         new_path = self.view.prompt_file_selection()
@@ -180,6 +256,8 @@ class MainController:
 
             self._on_session_selected()
 
+            self.view.running_widget.populate_table(self.model.df_running)
+            self.view.swimming_widget.populate_table(self.model.df_swimming)
             self.view.bw_widget.populate_table(self.model.df_bodyweight)
             self.view.bw_widget.draw_data(self.model.df_bodyweight)
             

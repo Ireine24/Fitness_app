@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
     QDateEdit, QDoubleSpinBox, QSpinBox, QLineEdit, 
     QPushButton, QTableWidget, QTableWidgetItem, QHeaderView, 
-    QAbstractItemView, QGroupBox
+    QAbstractItemView, QGroupBox, QSizePolicy
 )
 from PyQt6.QtCore import QDate
 
@@ -21,9 +21,16 @@ class RunningWidget(QWidget):
 
         def add_field(label: str, widget, width: int = None):
             pl = QHBoxLayout()
-            pl.addWidget(QLabel(label))
+            pl.setSpacing(4)
+            
+            lbl = QLabel(label)
+            lbl.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+            pl.addWidget(lbl)
+            
             if width:
                 widget.setFixedWidth(width)
+                widget.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+                
             pl.addWidget(widget)
             form_layout.addLayout(pl)
 
@@ -36,7 +43,7 @@ class RunningWidget(QWidget):
         self.input_dist.setRange(0, 100)
         self.input_dist.setSingleStep(0.5)
         self.input_dist.setValue(5.0)
-        add_field("Distance (km):", self.input_dist, 75)
+        add_field("Distance (km):", self.input_dist, 90)
 
         self.input_tid = QLineEdit()
         self.input_tid.setPlaceholderText("f.eks. 25:30")
@@ -51,8 +58,10 @@ class RunningWidget(QWidget):
         add_field("Noter:", self.input_noter, 140)
 
         self.btn_save = QPushButton("Gem løb")
+        self.btn_save.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.btn_save.setStyleSheet("background-color: #2E7D32; color: white; font-weight: bold; padding: 5px 10px; border-radius: 4px;")
         form_layout.addWidget(self.btn_save)
+        
         form_layout.addStretch()
         layout.addWidget(form_box)
 
@@ -119,9 +128,16 @@ class SwimmingWidget(QWidget):
 
         def add_field(label: str, widget, width: int = None):
             pl = QHBoxLayout()
-            pl.addWidget(QLabel(label))
+            pl.setSpacing(4)
+            
+            lbl = QLabel(label)
+            lbl.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+            pl.addWidget(lbl)
+            
             if width:
                 widget.setFixedWidth(width)
+                widget.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+                
             pl.addWidget(widget)
             form_layout.addLayout(pl)
 
@@ -134,7 +150,7 @@ class SwimmingWidget(QWidget):
         self.input_dist.setRange(0, 10000)
         self.input_dist.setSingleStep(100)
         self.input_dist.setValue(1500)
-        add_field("Distance (m):", self.input_dist, 80)
+        add_field("Distance (m):", self.input_dist, 90)
 
         self.input_tid = QLineEdit()
         self.input_tid.setPlaceholderText("f.eks. 35:00")
@@ -149,8 +165,10 @@ class SwimmingWidget(QWidget):
         add_field("Noter:", self.input_noter, 130)
 
         self.btn_save = QPushButton("Gem svømning")
+        self.btn_save.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.btn_save.setStyleSheet("background-color: #1565C0; color: white; font-weight: bold; padding: 5px 10px; border-radius: 4px;")
         form_layout.addWidget(self.btn_save)
+        
         form_layout.addStretch()
         layout.addWidget(form_box)
 
